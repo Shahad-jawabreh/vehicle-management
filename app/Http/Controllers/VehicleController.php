@@ -2,65 +2,66 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\CheckAllVehiclesJob;
 use App\Models\Vehicle;
+use App\Models\UserEvent;
+use App\Models\EventType;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use MatanYadaev\EloquentSpatial\Objects\Point;
+use App\Notifications\EventNotification; // Fixed: was 'apP'
 
 class VehicleController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
-        $vehicles = Vehicle::with('devices')->get();
-
-        return response()->json($vehicles);
+        return response()->json(Vehicle::with('user')->get());
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
-            'license_plate' => 'required|string|max:20|unique:vehicles,license_plate',
-            'model_name' => 'required|string|max:100',
+            'user_id' => 'required|exists:users,id',
+            'license_plate' => 'required|string|max:50|unique:vehicles,license_plate',
+            'model_name' => 'nullable|string|max:100',
+            'latitude' => 'required|numeric',
+            'longitude' => 'required|numeric', // Fixed: was 'longtitude'
+            'speed' => 'nullable|integer|max:50',
         ]);
 
-        $vehicle = Vehicle::create($validated);
+        $vehicle = new Vehicle($validated);
 
-        return response()->json([
-            'message' => 'Vehicle created successfully.',
-            'data' => $vehicle
-        ], 201);
+        if (isset($validated['latitude']) && isset($validated['longitude'])) {
+            $vehicle->location = new Point($validated['latitude'], $validated['longitude']);
+        }
+
+        $vehicle->save();
+        return response()->json($vehicle, 201);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Vehicle $vehicle)
     {
-        $vehicle = Vehicle::with('devices.providers')->findOrFail($id);
-
-        return response()->json($vehicle);
+        return response()->json($vehicle->load('user'));
     }
 
-
-    public function update(Request $request, string $id): JsonResponse
+    public function updatePosition(Request $request, Vehicle $vehicle)
     {
-        $vehicle = Vehicle::findOrFail($id);
-
         $validated = $request->validate([
-            'license_plate' => 'sometimes|string|max:20|unique:vehicles,license_plate,' . $id,
-            'model_name' => 'sometimes|string|max:100',
+            'latitude' => 'required|numeric|min:-90|max:90',
+            'longitude' => 'required|numeric|min:-180|max:180',
         ]);
 
-        $vehicle->update($validated);
+        $vehicle->location = new Point($validated['latitude'], $validated['longitude']);
+        $vehicle->save();
 
         return response()->json([
-            'message' => 'Vehicle updated successfully.',
-            'data' => $vehicle
+            'message' => 'Vehicle position updated successfully.',
+            'vehicle_id' => $vehicle->id,
         ]);
     }
 
-
-    public function destroy(string $id): JsonResponse
+    public function destroy(Vehicle $vehicle)
     {
-        $vehicle = Vehicle::findOrFail($id);
         $vehicle->delete();
-
-        return response()->json(['message' => 'Vehicle deleted successfully and cascading children deleted.'], 204);
+        return response()->json(['message' => 'Vehicle deleted successfully']);
     }
 }

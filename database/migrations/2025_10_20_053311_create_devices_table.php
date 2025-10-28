@@ -16,8 +16,6 @@ return new class extends Migration
             $table->string('serial_number')->unique();
             $table->string('device_type')->comment('e.g., Microprocessor, Gateway');
             $table->boolean('is_active')->default(true);
-
-            // One Device belongs to one Vehicle (Foreign Key for the 1:M relationship)
             $table->foreignId('vehicle_id')->constrained()->onDelete('cascade');
 
             $table->timestamps();

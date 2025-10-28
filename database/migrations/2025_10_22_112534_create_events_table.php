@@ -11,20 +11,18 @@ return new class extends Migration
      */
     public function up()
     {
-        Schema::create('providers', function (Blueprint $table) {
+        Schema::create('events', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('device_id')->constrained('devices')->cascadeOnDelete();
-            $table->string('type');
-            $table->string('name');
+            $table->string('type'); // e.g. zone_entered, speed_exceeded
+            $table->text('description')->nullable();
+            $table->boolean('is_active')->default(true); 
+            $table->boolean('is_special')->default(false);
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('providers');
+        Schema::dropIfExists('events');
     }
 };

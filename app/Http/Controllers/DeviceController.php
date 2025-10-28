@@ -4,72 +4,44 @@ namespace App\Http\Controllers;
 
 use App\Models\Device;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 
 class DeviceController extends Controller
 {
-
-    public function index(): JsonResponse
+    public function index()
     {
-        $devices = Device::with(['vehicle', 'providers'])->get();
-
-        return response()->json($devices);
+        return response()->json(Device::with('vehicle')->get());
     }
 
-
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
-            'serial_number' => 'required|string|max:50|unique:devices,serial_number',
-            'device_type' => 'required|string|max:50',
-            'is_active' => 'sometimes|boolean',
-            'vehicle_id' => 'required|exists:vehicles,id', // Must belong to an existing vehicle
+            'serial_number' => 'required|string|unique:devices,serial_number',
+            'device_type' => 'required|string',
+            'vehicle_id' => 'required|exists:vehicles,id',
         ]);
 
         $device = Device::create($validated);
-        $device->load(['vehicle', 'providers']);
-
-        return response()->json([
-            'message' => 'Device created successfully.',
-            'data' => $device
-        ], 201);
+        return response()->json($device, 201);
     }
 
-
-    public function show(string $id): JsonResponse
+    public function show(Device $device)
     {
-        $device = Device::with(['vehicle', 'providers'])->findOrFail($id);
-
-        return response()->json($device);
+        return response()->json($device->load('vehicle'));
     }
 
-
-    public function update(Request $request, string $id): JsonResponse
+    public function update(Request $request, Device $device)
     {
-        $device = Device::findOrFail($id);
-
         $validated = $request->validate([
-            'serial_number' => 'sometimes|string|max:50|unique:devices,serial_number,' . $id,
-            'device_type' => 'sometimes|string|max:50',
-            'is_active' => 'sometimes|boolean',
-            'vehicle_id' => 'sometimes|exists:vehicles,id',
+            'is_active' => 'boolean',
         ]);
 
         $device->update($validated);
-        $device->load(['vehicle', 'providers']);
-
-        return response()->json([
-            'message' => 'Device updated successfully.',
-            'data' => $device
-        ]);
+        return response()->json($device);
     }
 
-
-    public function destroy(string $id): JsonResponse
+    public function destroy(Device $device)
     {
-        $device = Device::findOrFail($id);
         $device->delete();
-
-        return response()->json(['message' => 'Device deleted successfully and related providers deleted.'], 204);
+        return response()->json(['message' => 'Device deleted successfully']);
     }
 }

@@ -4,70 +4,46 @@ namespace App\Http\Controllers;
 
 use App\Models\Provider;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
-
 
 class ProviderController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
-        $providers = Provider::with('device')->get();
-
-        return response()->json($providers);
+        return response()->json(Provider::with('device')->get());
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:100',
-            'type' => 'required|string|max:50',
-            'data_key' => 'required|string|max:50|unique:providers,data_key',
-            'device_id' => 'required|exists:devices,id', // Must belong to an existing device
+            'device_id' => 'required|exists:devices,id',
+            'type' => 'required|string',
+            'name' => 'nullable|string',
+            'meta' => 'nullable|json',
         ]);
 
         $provider = Provider::create($validated);
-
-        // Retrieve the provider with its relations for the response
-        $provider->load('device');
-
-        return response()->json([
-            'message' => 'Provider created successfully.',
-            'data' => $provider
-        ], 201);
+        return response()->json($provider, 201);
     }
 
-    public function show(string $id): JsonResponse
+    public function show(Provider $provider)
     {
-        $provider = Provider::with('device')->findOrFail($id);
-        return response()->json($provider);
+        return response()->json($provider->load('device'));
     }
-    
-    public function update(Request $request, string $id): JsonResponse
-    {
-        $provider = Provider::findOrFail($id);
 
+    public function update(Request $request, Provider $provider)
+    {
         $validated = $request->validate([
-            'name' => 'sometimes|string|max:100',
-            'type' => 'sometimes|string|max:50',
-            'data_key' => 'sometimes|string|max:50|unique:providers,data_key,' . $id,
-            'device_id' => 'sometimes|exists:devices,id',
+            'name' => 'nullable|string',
+            'meta' => 'nullable|json',
         ]);
 
         $provider->update($validated);
-        $provider->load('device');
-
-        return response()->json([
-            'message' => 'Provider updated successfully.',
-            'data' => $provider
-        ]);
+        return response()->json($provider);
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Provider $provider)
     {
-        $provider = Provider::findOrFail($id);
-
         $provider->delete();
-
-        return response()->json(['message' => 'Provider deleted successfully.'], 204);
+        return response()->json(['message' => 'Provider deleted successfully']);
     }
 }

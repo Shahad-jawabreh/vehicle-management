@@ -9,12 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Device extends Model
 {
-    // FIX: Add HasFactory trait to enable the Device::factory() method
     use HasFactory;
-
     protected $fillable = ['serial_number', 'device_type', 'is_active', 'vehicle_id'];
 
-    // Default eager loading to reduce queries when accessing Devices
     protected $with = ['vehicle'];
 
     /**
