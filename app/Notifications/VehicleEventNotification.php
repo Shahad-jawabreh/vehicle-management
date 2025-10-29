@@ -4,22 +4,25 @@ namespace App\Notifications;
 
 use App\Models\UserEvent;
 use App\Models\Vehicle;
+use App\Models\EventType;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class VehicleEventNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    protected $userEvent;
-    protected $vehicle;
+    public $userEventId;
+    public $vehicleId;
 
-    public function __construct(UserEvent $userEvent, Vehicle $vehicle)
+    // ✅ تخزين IDs فقط بدلاً من الـ Models
+    public function __construct($userEventId, $vehicleId)
     {
-        $this->userEvent = $userEvent;
-        $this->vehicle = $vehicle;
+        $this->userEventId = $userEventId;
+        $this->vehicleId = $vehicleId;
     }
 
     public function via(object $notifiable): array
@@ -29,19 +32,41 @@ class VehicleEventNotification extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $eventType = $this->userEvent->event->type;
-        $details = $this->userEvent->details;
+        $userEvent = UserEvent::with('eventType')->find($this->userEventId);
+        $vehicle = Vehicle::find($this->vehicleId);
 
-        // Get appropriate emoji and title based on event type
+        if (!$userEvent || !$vehicle) {
+            Log::error('❌ UserEvent or Vehicle not found', [
+                'user_event_id' => $this->userEventId,
+                'vehicle_id' => $this->vehicleId
+            ]);
+            return (new MailMessage)->line('Error: Data not found');
+        }
+
+        if (!$userEvent->eventType) {
+            Log::error('❌ EventType is NULL', [
+                'user_event_id' => $userEvent->id,
+                'event_id' => $userEvent->event_id
+            ]);
+            return (new MailMessage)->line('Error: Event type not found');
+        }
+
+        $eventType = $userEvent->eventType->type;
+        $details = $userEvent->details;
+
+        Log::info('🚨 VehicleEventNotification processing', [
+            'event_type' => $eventType,
+            'vehicle' => $vehicle->license_plate
+        ]);
+
         $config = $this->getEventConfig($eventType);
 
         $mail = (new MailMessage)
-            ->subject("{$config['icon']} Vehicle Alert: {$this->vehicle->license_plate}")
+            ->subject("{$config['icon']} Vehicle Alert: {$vehicle->license_plate}")
             ->greeting("Hello {$notifiable->name}!")
             ->line("**{$config['title']}**")
-            ->line("Vehicle: **{$this->vehicle->license_plate}** ({$this->vehicle->model_name})");
+            ->line("Vehicle: **{$vehicle->license_plate}** ({$vehicle->model_name})");
 
-        // Add event-specific details
         switch ($eventType) {
             case 'entered_zone':
             case 'left_zone':
@@ -70,16 +95,23 @@ class VehicleEventNotification extends Notification implements ShouldQueue
 
     public function toDatabase(object $notifiable): array
     {
-        $eventType = $this->userEvent->event->type;
-        $details = $this->userEvent->details;
+        $userEvent = UserEvent::with('eventType')->find($this->userEventId);
+        $vehicle = Vehicle::find($this->vehicleId);
+
+        if (!$userEvent || !$vehicle) {
+            return [];
+        }
+
+        $eventType = $userEvent->eventType?->type ?? 'unknown';
+        $details = $userEvent->details;
 
         return [
             'event_type' => $eventType,
-            'vehicle_license' => $this->vehicle->license_plate,
-            'vehicle_id' => $this->vehicle->id,
+            'vehicle_license' => $vehicle->license_plate,
+            'vehicle_id' => $vehicle->id,
             'message' => $details['message'],
             'details' => $details,
-            'user_event_id' => $this->userEvent->id,
+            'user_event_id' => $userEvent->id,
             'time' => now()->toDateTimeString(),
         ];
     }
@@ -89,41 +121,17 @@ class VehicleEventNotification extends Notification implements ShouldQueue
         return $this->toDatabase($notifiable);
     }
 
-    /**
-     * Get event configuration (icon and title)
-     */
     private function getEventConfig(string $eventType): array
     {
         $configs = [
-            'entered_zone' => [
-                'icon' => '✅',
-                'title' => 'Vehicle Entered Zone'
-            ],
-            'left_zone' => [
-                'icon' => '🚨',
-                'title' => 'Vehicle Left Zone'
-            ],
-            'speed_exceeded' => [
-                'icon' => '⚠️',
-                'title' => 'Speed Limit Exceeded'
-            ],
-            'engine_overheating' => [
-                'icon' => '🔥',
-                'title' => 'Engine Overheating Alert'
-            ],
-            'low_fuel' => [
-                'icon' => '⛽',
-                'title' => 'Low Fuel Warning'
-            ],
-            'maintenance_due' => [
-                'icon' => '🔧',
-                'title' => 'Maintenance Required'
-            ],
+            'entered_zone' => ['icon' => '✅', 'title' => 'Vehicle Entered Zone'],
+            'left_zone' => ['icon' => '🚨', 'title' => 'Vehicle Left Zone'],
+            'speed_exceeded' => ['icon' => '⚠️', 'title' => 'Speed Limit Exceeded'],
+            'engine_overheating' => ['icon' => '🔥', 'title' => 'Engine Overheating Alert'],
+            'low_fuel' => ['icon' => '⛽', 'title' => 'Low Fuel Warning'],
+            'maintenance_due' => ['icon' => '🔧', 'title' => 'Maintenance Required'],
         ];
 
-        return $configs[$eventType] ?? [
-            'icon' => '📢',
-            'title' => 'Vehicle Alert'
-        ];
+        return $configs[$eventType] ?? ['icon' => '📢', 'title' => 'Vehicle Alert'];
     }
 }

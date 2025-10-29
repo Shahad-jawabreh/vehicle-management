@@ -17,11 +17,7 @@ class Vehicle extends Model
     protected $casts = [
         'location' => \MatanYadaev\EloquentSpatial\Objects\Point::class,
     ];
-
-    public function company()
-    {
-        return $this->belongsTo(Company::class);
-    }
+    protected $spatialFields = ['location'];
 
     public function devices()
     {
@@ -31,5 +27,9 @@ class Vehicle extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+    public function events()
+    {
+        return $this->hasMany(UserEvent::class);
     }
 }

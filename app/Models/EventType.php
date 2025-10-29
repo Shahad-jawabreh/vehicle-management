@@ -12,4 +12,8 @@ class EventType extends Model
     protected $table = 'events';
 
     protected $fillable = ['type', 'description', 'is_active', 'is_special'];
+    public function userEvents()
+    {
+        return $this->hasMany(UserEvent::class, 'event_id');
+    }
 }

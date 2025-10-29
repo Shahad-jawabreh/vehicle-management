@@ -14,10 +14,11 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->string('password');
             $table->foreignId('company_id')->nullable()->constrained('companies')->nullOnDelete();
-            $table->string('role')->default('employee'); // admin, employee, manager
+            $table->string('role');// admin, employee, manager
             $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('notification_recipient_id')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamps();
+            $table->foreignId('zone_id')->nullable()->constrained('company_zones')->nullOnDelete();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

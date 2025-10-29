@@ -11,7 +11,6 @@ class UserEventController extends Controller
     {
         return response()->json(UserEvent::with(['eventType', 'vehicle', 'userToNotify'])->get());
     }
-
     public function show(UserEvent $userEvent)
     {
         return response()->json($userEvent->load(['eventType', 'vehicle', 'userToNotify']));

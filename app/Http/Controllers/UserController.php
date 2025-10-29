@@ -19,7 +19,6 @@ class UserController extends Controller
  public function store(Request $request)
 {
     $authUser = Auth::user();
-
     $validated = $request->validate([
         'name' => 'required|string|max:100',
         'email' => 'required|email|unique:users,email',
@@ -28,18 +27,15 @@ class UserController extends Controller
         'role' => 'required|string|in:admin,manager,driver',
         'zone_id' => 'nullable|exists:company_zones,id',
     ]);
-
     if ($authUser->role === 'manager') {
         if ($validated['role'] !== 'driver') {
             return response()->json(['error' => 'Managers can only create drivers'], 403);
         }
-
+        @dd($authUser);
         $validated['company_id'] = $authUser->company_id;
     }
 
-    if ($authUser->role === 'super_admin' && $validated['role'] !== 'super_admin' && empty($validated['company_id'])) {
-        return response()->json(['error' => 'Company ID is required for managers or drivers'], 422);
-    }
+    
 
     $validated['password'] = Hash::make($validated['password']);
     $validated['created_by'] = $authUser->id;

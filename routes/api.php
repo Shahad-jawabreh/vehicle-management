@@ -19,6 +19,7 @@ use App\Http\Controllers\AuthController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
+Route::post('/register', [AuthController::class, 'register']);
 
 
 Route::prefix('users')->middleware(['auth:sanctum', 'role:admin,manager'])->group(function() {
@@ -33,9 +34,10 @@ Route::get('/users/profile', [UserController::class, 'getUsersProfile'])->middle
 
 Route::apiResource('companies', CompanyController::class);
 Route::apiResource('company-zones', CompanyZonesController::class);
+Route::apiResource('vehicles', VehicleController::class);
+
 Route::post('vehicles/{vehicle}/position', [VehicleController::class, 'updatePosition']);
 
-Route::apiResource('vehicles', VehicleController::class);
 Route::apiResource('devices', DeviceController::class);
 Route::apiResource('providers', ProviderController::class);
 

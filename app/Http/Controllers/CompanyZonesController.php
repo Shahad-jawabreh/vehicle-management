@@ -25,14 +25,12 @@ class CompanyZonesController extends Controller
             'latitude' => 'required|numeric|min:-90|max:90',
             'longitude' => 'required|numeric|min:-180|max:180',
             'radius' => 'required|numeric|min:1',
-            'created_by' => 'nullable|exists:users,id',
         ]);
 
         $zone = new CompanyZone();
         $zone->company_id = $validated['company_id'];
         $zone->name = $validated['name'];
         $zone->radius = $validated['radius'];
-        $zone->created_by = $validated['created_by'] ?? null;
         $zone->location = new Point($validated['latitude'], $validated['longitude']); // Y = latitude, X = longitude
 
         $zone->save();
@@ -40,7 +38,7 @@ class CompanyZonesController extends Controller
         return response()->json($zone, 201);
     }
 
-    
+
     public function update(Request $request, CompanyZone $companyZone)
     {
         $validated = $request->validate([
@@ -48,8 +46,7 @@ class CompanyZonesController extends Controller
             'name' => 'nullable|string|max:100',
             'latitude' => 'nullable|numeric|min:-90|max:90',
             'longitude' => 'nullable|numeric|min:-180|max:180',
-            'radius' => 'nullable|numeric|min:1',
-            'created_by' => 'nullable|exists:users,id',
+            'radius' => 'nullable|numeric|min:1'
         ]);
 
         if (isset($validated['company_id'])) {
@@ -60,9 +57,6 @@ class CompanyZonesController extends Controller
         }
         if (isset($validated['radius'])) {
             $companyZone->radius = $validated['radius'];
-        }
-        if (isset($validated['created_by'])) {
-            $companyZone->created_by = $validated['created_by'];
         }
         if (isset($validated['latitude']) && isset($validated['longitude'])) {
             $companyZone->center = new Point($validated['latitude'], $validated['longitude']);

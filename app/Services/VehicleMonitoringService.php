@@ -1,211 +1,198 @@
 <?php
 namespace App\Services;
 
-use App\Models\{Vehicle, User, EventType, UserEvent, VehicleEventState};
+use App\Models\{Vehicle, User, EventType, UserEvent};
 use App\Notifications\VehicleEventNotification;
 use Illuminate\Support\Facades\Log;
+use App\Models\CompanyZone;
 
 class VehicleMonitoringService
 {
-
-    /**
-     * Check all monitoring rules for a vehicle
-     */
     public function checkVehicle($vehicleId)
     {
-        $vehicle = Vehicle::with(['user.company'])->find($vehicleId);
+        $vehicle = Vehicle::with(['user.company.zones'])->find($vehicleId);
 
         if (!$vehicle || !$vehicle->user) {
             Log::warning("Vehicle or user not found: {$vehicleId}");
             return;
         }
 
-        // Check all monitoring types
         $this->checkGeofences($vehicle);
         $this->checkSpeed($vehicle);
-        //$this->checkTemperature($vehicle);
     }
-
-    /**
-     * Geofence monitoring
-     */
+    
     private function checkGeofences(Vehicle $vehicle)
     {
-        $zones = $vehicle->user->company->zones ?? collect();
+        $zone_id = $vehicle->user->zone_id;
 
-        if ($zones->isEmpty() || !$vehicle->location) {
+        if (!$zone_id || !$vehicle->location) {
             return;
         }
 
-        foreach ($zones as $zone) {
-            if (!$zone->location) continue;
+        $zone = CompanyZone::find($zone_id);
 
-            $distance = $this->calculateDistance(
-                $vehicle->location->latitude,
-                $vehicle->location->longitude,
-                $zone->location->latitude,
-                $zone->location->longitude
-            );
-
-            $isInside = $distance <= $zone->radius;
-            $newState = ['is_inside' => $isInside, 'distance' => round($distance, 2)];
-            $eventType = $isInside ? 'entered_zone' : 'left_zone';
-            $state = VehicleEventState::firstOrCreate(
-                [
-                    'vehicle_id' => $vehicle->id,
-                    'event_type' => $eventType,
-                    'reference_id' => $zone->id
-                ],
-                ['state_data' => $newState]
-            );
-
-            // Only notify if state changed
-            if (!$state->hasChanged($newState)) {
-                continue;
-            }
-
-            $state->update([
-                'state_data' => $newState,
-                'last_triggered_at' => now()
-            ]);
-
-            $this->sendNotification($vehicle, $eventType, [
-                'zone_name' => $zone->name,
-                'distance' => $newState['distance']
-            ]);
+        if (!$zone || !$zone->location) {
+            return;
         }
+
+        $distance = $this->calculateDistance(
+            $vehicle->location->latitude,
+            $vehicle->location->longitude,
+            $zone->location->latitude,
+            $zone->location->longitude
+        );
+
+        $isInside = $distance <= $zone->radius;
+
+        // ✅ نخزن فقط الحالة المهمة
+        $newState = ['is_inside' => $isInside];
+
+        $lastEvent = UserEvent::where('vehicle_id', $vehicle->id)
+            ->where('reference_id', $zone->id)
+            ->whereHas('eventType', function($q) {
+                $q->whereIn('type', ['entered_zone', 'left_zone']);
+            })
+            ->latest()
+            ->first();
+
+        // ✅ مقارنة بسيطة
+        if ($lastEvent && !$lastEvent->hasChanged($newState)) {
+            Log::info('⏭️ Geofence: No state change', [
+                'vehicle_id' => $vehicle->id,
+                'zone_id' => $zone->id,
+                'state' => $isInside ? 'inside' : 'outside'
+            ]);
+            return;
+        }
+
+        $eventType = $isInside ? 'entered_zone' : 'left_zone';
+        $event = EventType::firstOrCreate(['type' => $eventType]);
+
+        Log::info('📘 Geofence state changed', [
+            'event_type' => $eventType,
+            'vehicle_id' => $vehicle->id,
+            'zone_id' => $zone->id
+        ]);
+
+        $userEvent = UserEvent::create([
+            'vehicle_id' => $vehicle->id,
+            'event_id' => $event->id,
+            'reference_id' => $zone->id,
+            'user_to_notify_id' => $vehicle->user->created_by,
+            'details' => [
+                'message' => "Vehicle {$vehicle->license_plate} " .
+                            ($isInside ? 'دخلت' : 'خرجت من') . " المنطقة {$zone->name}",
+                'vehicle_license_plate' => $vehicle->license_plate,
+                'zone_name' => $zone->name,
+                'distance' => round($distance, 2) // ✅ المسافة في details فقط (للعرض)
+            ],
+            'state_data' => $newState, // ✅ فقط: {'is_inside': true/false}
+            'last_triggered_at' => now(),
+            'is_notified' => false,
+        ]);
+
+        Log::info('✅ Geofence event created', ['id' => $userEvent->id]);
+
+        $this->sendNotification($userEvent, $vehicle);
     }
 
-    /**
-     * Speed monitoring
-     */
     private function checkSpeed(Vehicle $vehicle)
     {
         if (!isset($vehicle->speed)) {
             return;
         }
-        $speedLimit = $vehicle->user->company->speed_limit ?? 120; // Default limit
+
+        $speedLimit = $vehicle->user->company->speed_limit ?? 120;
         $isExceeding = $vehicle->speed > $speedLimit;
 
-        $newState = [
-            'is_exceeding' => $isExceeding,
-            'current_speed' => $vehicle->speed,
-            'limit' => $speedLimit
-        ];
-        $eventType = $isExceeding ? 'speed_exceeded' : 'speed_normal';
+        // ✅ نخزن فقط الحالة المهمة
+        $newState = ['is_exceeding' => $isExceeding];
 
-        $state = VehicleEventState::firstOrCreate(
-            [
+        $lastEvent = UserEvent::where('vehicle_id', $vehicle->id)
+            ->whereNull('reference_id')
+            ->whereHas('eventType', function($q) {
+                $q->where('type', 'speed_exceeded');
+            })
+            ->latest()
+            ->first();
+
+        if (!$isExceeding) {
+            Log::info('ℹ️ Speed is normal', [
                 'vehicle_id' => $vehicle->id,
-                'event_type' => $eventType,
-                'reference_id' => null
-            ],
-            ['state_data' => $newState]
-        );
+                'speed' => $vehicle->speed
+            ]);
+            return;
+        }
 
-        // Notify on state change OR if still exceeding after cooldown
-        $shouldNotify = $state->hasChanged($newState) ||
-                       ($isExceeding && $state->canNotifyAgain(15));
+        // ✅ منطق بسيط وواضح
+        $shouldNotify = false;
+        $reason = '';
+
+        if (!$lastEvent) {
+            $shouldNotify = true;
+            $reason = 'First time exceeding';
+        } elseif ($lastEvent->hasChanged($newState)) {
+            // لن يحدث هذا لأننا نخزن فقط true/false
+            // لكن نتركه للأمان
+            $shouldNotify = true;
+            $reason = 'State changed';
+        } elseif ($lastEvent->canNotifyAgain(15)) {
+            $shouldNotify = true;
+            $reason = '15 minutes passed, still exceeding';
+        }
 
         if (!$shouldNotify) {
+            Log::info('⏭️ Speed: No notification needed', [
+                'vehicle_id' => $vehicle->id,
+                'speed' => $vehicle->speed,
+                'minutes_since_last' => $lastEvent->last_triggered_at->diffInMinutes(now())
+            ]);
             return;
         }
 
-        $state->update([
-            'state_data' => $newState,
-            'last_triggered_at' => now()
+        $event = EventType::firstOrCreate(['type' => 'speed_exceeded']);
+
+        Log::info('🚨 Speed event triggered', [
+            'vehicle_id' => $vehicle->id,
+            'speed' => $vehicle->speed,
+            'reason' => $reason
         ]);
 
-        if ($isExceeding) {
-            // add to event user data to notifiy admin of user
-            $this->sendNotification($vehicle, 'speed_exceeded', [
-                'speed' => $vehicle->speed,
-                'limit' => $speedLimit
-            ]);
-        }
-    }
-
-    /**
-     * Temperature monitoring
-     */
-    // private function checkTemperature(Vehicle $vehicle)
-    // {
-    //     if (!isset($vehicle->engine_temperature)) {
-    //         return;
-    //     }
-
-    //     $tempLimit = 95; // Celsius
-    //     $isOverheating = $vehicle->engine_temperature > $tempLimit;
-
-    //     $newState = [
-    //         'is_overheating' => $isOverheating,
-    //         'temperature' => $vehicle->engine_temperature
-    //     ];
-
-    //     $state = VehicleEventState::firstOrCreate(
-    //         [
-    //             'vehicle_id' => $vehicle->id,
-    //             'event_type' => 'temperature',
-    //             'reference_id' => null
-    //         ],
-    //         ['state_data' => $newState]
-    //     );
-
-    //     // Notify on state change OR if still overheating after cooldown
-    //     $shouldNotify = $state->hasChanged($newState) ||
-    //                    ($isOverheating && $state->canNotifyAgain(10));
-
-    //     if (!$shouldNotify) {
-    //         return;
-    //     }
-
-    //     $state->update([
-    //         'state_data' => $newState,
-    //         'last_triggered_at' => now()
-    //     ]);
-
-    //     if ($isOverheating) {
-    //         $this->sendNotification($vehicle, 'engine_overheating', [
-    //             'temperature' => $vehicle->engine_temperature,
-    //             'limit' => $tempLimit
-    //         ]);
-    //     }
-    // }
-
-    /**
-     * Send notification helper
-     */
-    private function sendNotification(Vehicle $vehicle, string $eventType, array $details)
-    {
-        $user = $vehicle->user;
-        $notifyUser = User::find($user->created_by);
-
-        if (!$notifyUser) {
-            Log::warning("Notify user not found: {$user->created_by}");
-            return;
-        }
-
-        $event = EventType::firstOrCreate(['type' => $eventType]);
-
-        $messages = [
-            'entered_zone' => "دخلت المنطقة {$details['zone_name']}",
-            'left_zone' => "خرجت من المنطقة {$details['zone_name']}",
-            'speed_exceeded' => "تجاوزت السرعة المحددة ({$details['speed']} km/h)",
-            'engine_overheating' => "حرارة المحرك مرتفعة ({$details['temperature']}°C)",
-        ];
-
         $userEvent = UserEvent::create([
-            'user_id' => $user->id,
+            'vehicle_id' => $vehicle->id,
             'event_id' => $event->id,
-            'details' => 'dd',
-            'user_to_notify_id' => $user->created_by,
+            'reference_id' => null,
+            'user_to_notify_id' => $vehicle->user->created_by,
+            'details' => [
+                'message' => "Vehicle {$vehicle->license_plate} تجاوزت السرعة المحددة ({$vehicle->speed} km/h)",
+                'vehicle_license_plate' => $vehicle->license_plate,
+                'speed' => $vehicle->speed, // ✅ السرعة في details (للعرض)
+                'limit' => $speedLimit,
+                'notification_reason' => $reason
+            ],
+            'state_data' => $newState, // ✅ فقط: {'is_exceeding': true/false}
+            'last_triggered_at' => now(),
             'is_notified' => false,
         ]);
 
+        Log::info('✅ Speed event created', ['id' => $userEvent->id]);
+
+        $this->sendNotification($userEvent, $vehicle);
+    }
+
+    private function sendNotification(UserEvent $userEvent, Vehicle $vehicle)
+    {
+        $notifyUser = User::find($userEvent->user_to_notify_id);
+
+        if (!$notifyUser) {
+            Log::warning("Notify user not found: {$userEvent->user_to_notify_id}");
+            return;
+        }
+
         try {
-            $notifyUser->notify(new VehicleEventNotification($userEvent, $vehicle));
+            $notifyUser->notify(new VehicleEventNotification($userEvent->id, $vehicle->id));
             $userEvent->update(['is_notified' => true]);
-            Log::info("✓ Notification sent: {$eventType} for vehicle {$vehicle->id}");
+            Log::info("✓ Notification sent for event {$userEvent->id}");
         } catch (\Exception $e) {
             Log::error("Notification failed: " . $e->getMessage());
         }

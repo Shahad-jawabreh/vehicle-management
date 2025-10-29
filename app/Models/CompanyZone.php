@@ -8,15 +8,12 @@ class CompanyZone extends Model
 {
     use HasSpatial;
 
-    protected $fillable = ['company_id','name','location','radius','created_by'];
+    protected $fillable = ['company_id','name','location','radius'];
     protected $casts = [
         'location' => \MatanYadaev\EloquentSpatial\Objects\Point::class,
     ];    protected $spatialFields = ['location'];
-    public function userToNotify()
-    {
-        return $this->belongsTo(User::class, 'user_to_notify_id');
-    }
-    public function company()  
+
+    public function company()
 {
     return $this->belongsTo(Company::class);
 }

@@ -17,7 +17,6 @@ return new class extends Migration
         $table->string('name');
         $table->foreignId('company_id')->nullable()->constrained('companies')->onDelete('set null');
         $table->double('radius')->default(500);
-        $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
         $table->timestamps();
     });
     DB::statement('ALTER TABLE company_zones ADD location POINT');

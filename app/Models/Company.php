@@ -16,9 +16,5 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;class Company extends Mode
     {
         return $this->hasMany(CompanyZone::class);
     }
-    public function vehicles()
-    {
-        return $this->hasMany(Vehicle::class);
-    }
-    
+
 }

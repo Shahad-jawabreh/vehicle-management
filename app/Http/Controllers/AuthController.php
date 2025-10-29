@@ -29,6 +29,32 @@ class AuthController extends Controller
             'user' => $user
         ]);
     }
+    public function register(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:8',
+            'company_id' => 'required|exists:companies,id',
+            'role' => 'nullable|string|in:admin,user',
+        ]);
+
+        $user = User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'company_id' => $validated['company_id'],
+            'role' => $validated['role'] ?? 'user',
+        ]);
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+            'token_type' => 'Bearer',
+        ], 201);
+    }
 
     public function logout(Request $request)
     {
