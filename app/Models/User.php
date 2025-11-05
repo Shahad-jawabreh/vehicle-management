@@ -6,9 +6,13 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
 
 class User extends Authenticatable
 {
+    use SoftDeletes;
+
     use HasFactory, Notifiable,HasApiTokens, Notifiable;
     protected $fillable = [
         'name', 'email', 'password', 'company_id','zone_id',
@@ -35,7 +39,7 @@ class User extends Authenticatable
     {
         return $this->belongsTo(User::class, 'notification_recipient_id');
     }
-    
+
     public function userEvents()
     {
         return $this->hasMany(UserEvent::class, 'user_to_notify_id');
